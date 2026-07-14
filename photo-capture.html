@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Photo Capture</title>
+<style>
+  :root {
+    --bg: #171512;
+    --panel: #211e1a;
+    --text: #f2ede4;
+    --muted: #a89f90;
+    --accent: #5fb98c;
+    --accent-dim: #3d7a5c;
+    --danger: #d9705a;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--panel);
+    border-radius: var(--radius);
+    padding: 28px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  h1 {
+    font-size: 1.3rem;
+    margin: 0 0 6px;
+    font-weight: 600;
+  }
+  p.sub {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin: 0 0 20px;
+    line-height: 1.4;
+  }
+  .video-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  video, canvas, img.preview {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  canvas, img.preview { display: none; }
+  .disclosure {
+    background: rgba(95, 185, 140, 0.1);
+    border: 1px solid var(--accent-dim);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 0.85rem;
+    color: var(--text);
+    margin-bottom: 18px;
+    line-height: 1.45;
+  }
+  .disclosure strong { color: var(--accent); }
+  button {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-bottom: 10px;
+    transition: opacity 0.15s ease;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button:hover:not(:disabled) { opacity: 0.9; }
+  .btn-primary { background: var(--accent); color: #10261c; }
+  .btn-secondary { background: transparent; color: var(--muted); border: 1px solid #3a362f; }
+  .status {
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 10px;
+    min-height: 18px;
+  }
+  .status.error { color: var(--danger); }
+  .status.success { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Take a photo</h1>
+  <p class="sub">Tap the button below, your browser will ask permission to use your camera.</p>
+
+  <div class="video-wrap">
+    <video id="video" autoplay playsinline></video>
+    <canvas id="canvas"></canvas>
+    <img id="preview" class="preview" alt="Captured photo preview">
+  </div>
+
+  <div class="disclosure" id="disclosure" style="display:none;">
+    <strong>Before this sends:</strong> this photo will be emailed to Ali. It is not saved anywhere else and nobody else can see it.
+  </div>
+
+  <button id="startBtn" class="btn-primary">Start camera</button>
+  <button id="captureBtn" class="btn-primary" style="display:none;">Take photo</button>
+  <button id="sendBtn" class="btn-primary" style="display:none;">Send photo</button>
+  <button id="retakeBtn" class="btn-secondary" style="display:none;">Retake</button>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>
+  // ---- EmailJS setup ----
+  // 1. Create a free account at https://www.emailjs.com
+  // 2. Add an email service (e.g. Gmail) -> get SERVICE_ID
+  // 3. Create an email template with a variable like {{photo}} for the image -> get TEMPLATE_ID
+  // 4. Copy your Public Key from Account > API Keys -> PUBLIC_KEY
+  const EMAILJS_PUBLIC_KEY  = "YOUR_PUBLIC_KEY";
+  const EMAILJS_SERVICE_ID  = "YOUR_SERVICE_ID";
+  const EMAILJS_TEMPLATE_ID = "YOUR_TEMPLATE_ID";
+
+  emailjs.init(EMAILJS_PUBLIC_KEY);
+
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const preview = document.getElementById('preview');
+  const disclosure = document.getElementById('disclosure');
+  const startBtn = document.getElementById('startBtn');
+  const captureBtn = document.getElementById('captureBtn');
+  const sendBtn = document.getElementById('sendBtn');
+  const retakeBtn = document.getElementById('retakeBtn');
+  const status = document.getElementById('status');
+
+  let stream = null;
+  let photoDataUrl = null;
+
+  function setStatus(msg, type) {
+    status.textContent = msg;
+    status.className = 'status' + (type ? ' ' + type : '');
+  }
+
+  startBtn.addEventListener('click', async () => {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+      video.srcObject = stream;
+      startBtn.style.display = 'none';
+      captureBtn.style.display = 'block';
+      setStatus('');
+    } catch (err) {
+      setStatus('Camera access was denied or unavailable.', 'error');
+    }
+  });
+
+  captureBtn.addEventListener('click', () => {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    photoDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+
+    preview.src = photoDataUrl;
+    video.style.display = 'none';
+    preview.style.display = 'block';
+
+    captureBtn.style.display = 'none';
+    disclosure.style.display = 'block';
+    sendBtn.style.display = 'block';
+    retakeBtn.style.display = 'block';
+  });
+
+  retakeBtn.addEventListener('click', () => {
+    photoDataUrl = null;
+    preview.style.display = 'none';
+    video.style.display = 'block';
+    disclosure.style.display = 'none';
+    sendBtn.style.display = 'none';
+    retakeBtn.style.display = 'none';
+    captureBtn.style.display = 'block';
+    setStatus('');
+  });
+
+  sendBtn.addEventListener('click', async () => {
+    if (!photoDataUrl) return;
+    sendBtn.disabled = true;
+    retakeBtn.disabled = true;
+    setStatus('Sending...');
+
+    try {
+      await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+        photo: photoDataUrl
+      });
+      setStatus('Sent! Thanks.', 'success');
+      sendBtn.style.display = 'none';
+      retakeBtn.style.display = 'none';
+    } catch (err) {
+      setStatus('Something went wrong sending the photo. Try again.', 'error');
+      sendBtn.disabled = false;
+      retakeBtn.disabled = false;
+    }
+  });
+</script>
+
+</body>
+</html>
